@@ -1,0 +1,90 @@
+---
+title: "Data"
+author: "Yinfeng Zhou"
+date: "2020/12/11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(
+  tidyverse,
+  magrittr,
+  knitr,
+  httr,
+  jsonlite,
+  lubridate,
+  RColorBrewer,
+  wordcloud2,
+  tm
+)
+```
+
+
+```{r fetching}
+musekey<-"f4d1dda85a1f43c8a1b0071c0b332b663be1a26c887a61bafb6174dcea54209f"
+muselabel<-"MSSP BU"
+museurl<-"https://www.themuse.com/api/public/jobs?category=Data%20Science&page=1&api_key=f4d1dda85a1f43c8a1b0071c0b332b663be1a26c887a61bafb6174dcea54209f"
+
+musegenerator<-function(page){
+  museurl<-paste("https://www.themuse.com/api/public/jobs?category=Data%20Science&page=",page,"&api_key=f4d1dda85a1f43c8a1b0071c0b332b663be1a26c887a61bafb6174dcea54209f",sep="")
+  return(museurl)
+}
+
+musedata<-fromJSON(museurl,flatten=TRUE)
+muse<-musedata$results
+musetemp<-muse
+i=1
+while(nrow(musetemp)==20&&nrow(muse)<1000){
+  i=i+1
+  museurl<-musegenerator(i)
+  datatemp<-fromJSON(museurl,flatten=TRUE)
+  musetemp<-datatemp$results
+  muse%<>%rbind(musetemp)
+}
+
+
+
+```
+
+```{r cleaning}
+muse%>%select(c("id","publication_date","name","contents","locations","refs.landing_page","company.id","company.name"))->museset
+museset$contents%<>%str_replace_all("\\<(.*?)\\>","")
+museset%<>%separate(publication_date,c("publication_date","temp"),sep="T")
+museset%<>%select(-temp)
+museset$publication_date%<>%ymd()
+museset%<>%unnest_longer(locations)
+```
+
+```{r}
+library(tidytext)
+museset%>%unnest_tokens(word,contents)
+
+
+```
+
+```{r write}
+text<-museset$contents
+docs<-Corpus(VectorSource(text))
+
+docs <- docs %>%
+  tm_map(removeNumbers) %>%
+  tm_map(removePunctuation) %>%
+  tm_map(stripWhitespace)
+docs <- tm_map(docs, removeWords, stopwords("english"))
+```
+```{r}
+dtm <- TermDocumentMatrix(docs) 
+matrix <- as.matrix(dtm) 
+words <- sort(rowSums(matrix),decreasing=TRUE) 
+df <- data.frame(word = names(words),freq=words)
+set.seed(1234) # for reproducibility 
+wordcloud2(data=df, size=1, color='random-dark')
+
+
+ df%>%head(n=10)%>%
+        mutate(word = reorder(word, freq))->dd
+      
+dd<-museset%>%filter(company.name %in% 'Amazon')
+
+```
